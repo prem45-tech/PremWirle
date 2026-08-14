@@ -624,7 +624,7 @@ else:
 
     # ADMIN DASHBOARD
 
-    elif page == "👑 Admin Dashboard":
+    elif page == "Admin Dashboard":
 
         if not st.session_state.is_admin:
 
@@ -635,7 +635,7 @@ else:
             st.stop()
 
         st.title(
-            "👑 Admin Dashboard"
+            "Admin Dashboard"
         )
 
         st.subheader(
