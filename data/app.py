@@ -70,7 +70,7 @@ if not st.session_state.logged_in:
 
     with login_tab:
 
-        st.header("Welcome Back 👋")
+        st.header("Welcome Back ")
 
         email = st.text_input(
             "Email",
@@ -216,7 +216,7 @@ else:
     if st.session_state.is_admin:
 
         st.sidebar.success(
-            "👑 Administrator"
+            "Administrator"
         )
 
     else:
@@ -240,7 +240,7 @@ else:
     if st.session_state.is_admin:
 
         navigation_pages.append(
-            "👑 Admin Dashboard"
+            "Admin Dashboard"
         )
 
     page = st.sidebar.radio(
