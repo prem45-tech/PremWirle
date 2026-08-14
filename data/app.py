@@ -9,16 +9,16 @@ from database import (
     login_user,
     add_transaction,
     get_transactions,
-    delete_transaction
+    delete_transaction,
+    get_all_users,
+    get_all_transactions
 )
 
 from analytics import calculate_summary
 from prediction import predict_next_week
 
 
-
 # PAGE CONFIGURATION
-
 
 st.set_page_config(
     page_title="SmartSpend",
@@ -27,33 +27,30 @@ st.set_page_config(
 )
 
 
-
 # INITIALIZE DATABASE
-
 
 create_database()
 
 
-
 # SESSION STATE
 
-
 if "logged_in" not in st.session_state:
-
     st.session_state.logged_in = False
 
 if "user_id" not in st.session_state:
-
     st.session_state.user_id = None
 
 if "user_name" not in st.session_state:
-
     st.session_state.user_name = None
 
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 
 
 # LOGIN / SIGNUP PAGE
-
 
 if not st.session_state.logged_in:
 
@@ -68,7 +65,6 @@ if not st.session_state.logged_in:
     login_tab, signup_tab = st.tabs(
         ["🔐 Login", "📝 Create Account"]
     )
-
 
     # LOGIN
 
@@ -108,10 +104,16 @@ if not st.session_state.logged_in:
                 if user:
 
                     st.session_state.logged_in = True
-
                     st.session_state.user_id = user[0]
-
                     st.session_state.user_name = user[1]
+                    st.session_state.user_email = user[2]
+
+                    if len(user) >= 4:
+                        st.session_state.is_admin = bool(
+                            user[3]
+                        )
+                    else:
+                        st.session_state.is_admin = False
 
                     st.success(
                         "Login successful! 🎉"
@@ -199,15 +201,11 @@ if not st.session_state.logged_in:
                     )
 
 
-
 # MAIN APPLICATION
-
 
 else:
 
-    # -----------------------------------------------------
     # SIDEBAR
-    # -----------------------------------------------------
 
     st.sidebar.title("💰 SmartSpend")
 
@@ -215,26 +213,44 @@ else:
         f"Welcome, **{st.session_state.user_name}** 👋"
     )
 
+    if st.session_state.is_admin:
+
+        st.sidebar.success(
+            "👑 Administrator"
+        )
+
+    else:
+
+        st.sidebar.info(
+            "👤 User Account"
+        )
+
     st.sidebar.divider()
 
     st.sidebar.title("📌 Navigation")
 
+    navigation_pages = [
+        "Dashboard",
+        "Add Transaction",
+        "Analytics",
+        "Prediction",
+        "Transaction History"
+    ]
+
+    if st.session_state.is_admin:
+
+        navigation_pages.append(
+            "👑 Admin Dashboard"
+        )
+
     page = st.sidebar.radio(
         "Go to",
-        [
-            "Dashboard",
-            "Add Transaction",
-            "Analytics",
-            "Prediction",
-            "Transaction History"
-        ]
+        navigation_pages
     )
 
-    st.sidebar.divider()
-
-    # -----------------------------------------------------
     # LOGOUT
-    # -----------------------------------------------------
+
+    st.sidebar.divider()
 
     if st.sidebar.button(
         "🚪 Logout",
@@ -242,17 +258,14 @@ else:
     ):
 
         st.session_state.logged_in = False
-
         st.session_state.user_id = None
-
         st.session_state.user_name = None
+        st.session_state.user_email = None
+        st.session_state.is_admin = False
 
         st.rerun()
 
-
-    # -----------------------------------------------------
-    # LOAD ONLY CURRENT USER DATA
-    # -----------------------------------------------------
+    # LOAD CURRENT USER DATA
 
     df = get_transactions(
         st.session_state.user_id
@@ -266,12 +279,15 @@ else:
         st.title("💰 SmartSpend")
 
         st.subheader(
-            f"Welcome back, {st.session_state.user_name}! 👋"
+            f"Welcome back, "
+            f"{st.session_state.user_name}! 👋"
         )
 
         st.divider()
 
-        st.header("📊 Financial Dashboard")
+        st.header(
+            "📊 Financial Dashboard"
+        )
 
         income, expenses, balance, savings_rate = (
             calculate_summary(df)
@@ -340,7 +356,9 @@ else:
 
     elif page == "Add Transaction":
 
-        st.header("➕ Add New Transaction")
+        st.header(
+            "➕ Add New Transaction"
+        )
 
         with st.form(
             "transaction_form"
@@ -417,7 +435,9 @@ else:
 
     elif page == "Analytics":
 
-        st.header("📈 Spending Analytics")
+        st.header(
+            "📈 Spending Analytics"
+        )
 
         if df.empty:
 
@@ -443,8 +463,6 @@ else:
                     expense_df["date"]
                 )
 
-                # Category chart
-
                 category_data = (
                     expense_df
                     .groupby("category")["amount"]
@@ -468,7 +486,31 @@ else:
                     use_container_width=True
                 )
 
-                # Monthly spending
+                expense_df["week"] = (
+                    expense_df["date"]
+                    .dt.to_period("W")
+                    .astype(str)
+                )
+
+                weekly_data = (
+                    expense_df
+                    .groupby("week")["amount"]
+                    .sum()
+                    .reset_index()
+                )
+
+                fig2 = px.line(
+                    weekly_data,
+                    x="week",
+                    y="amount",
+                    markers=True,
+                    title="📅 Weekly Spending Trend"
+                )
+
+                st.plotly_chart(
+                    fig2,
+                    use_container_width=True
+                )
 
                 expense_df["month"] = (
                     expense_df["date"]
@@ -483,7 +525,7 @@ else:
                     .reset_index()
                 )
 
-                fig2 = px.line(
+                fig3 = px.line(
                     monthly_data,
                     x="month",
                     y="amount",
@@ -492,7 +534,7 @@ else:
                 )
 
                 st.plotly_chart(
-                    fig2,
+                    fig3,
                     use_container_width=True
                 )
 
@@ -505,13 +547,16 @@ else:
             "🔮 Next Week Spending Prediction"
         )
 
-        prediction = predict_next_week(df)
+        prediction = predict_next_week(
+            df
+        )
 
         if prediction is None:
 
             st.warning(
-                "Add expenses from at least 2 "
-                "different weeks to generate a prediction."
+                "Add expenses from at least "
+                "2 different weeks to generate "
+                "a prediction."
             )
 
         else:
@@ -531,7 +576,9 @@ else:
 
     elif page == "Transaction History":
 
-        st.header("📋 Transaction History")
+        st.header(
+            "📋 Transaction History"
+        )
 
         if df.empty:
 
@@ -575,17 +622,335 @@ else:
                 st.rerun()
 
 
-    # CSV DOWNLOAD
+    # ADMIN DASHBOARD
+
+    elif page == "👑 Admin Dashboard":
+
+        if not st.session_state.is_admin:
+
+            st.error(
+                "🚫 Access denied."
+            )
+
+            st.stop()
+
+        st.title(
+            "👑 Admin Dashboard"
+        )
+
+        st.subheader(
+            "SmartSpend System Administration"
+        )
+
+        st.divider()
+
+        try:
+
+            users_df = get_all_users()
+
+            all_transactions_df = (
+                get_all_transactions()
+            )
+
+        except Exception as e:
+
+            st.error(
+                "Admin database functions are not "
+                "available in database.py."
+            )
+
+            st.code(
+                str(e)
+            )
+
+            st.stop()
+
+        # ADMIN SUMMARY
+
+        total_users = len(users_df)
+
+        if all_transactions_df.empty:
+
+            total_income = 0
+            total_expenses = 0
+            total_balance = 0
+
+        else:
+
+            total_income = all_transactions_df[
+                all_transactions_df["transaction_type"]
+                == "Income"
+            ]["amount"].sum()
+
+            total_expenses = all_transactions_df[
+                all_transactions_df["transaction_type"]
+                == "Expense"
+            ]["amount"].sum()
+
+            total_balance = (
+                total_income - total_expenses
+            )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric(
+            "👥 Total Users",
+            total_users
+        )
+
+        col2.metric(
+            "💵 Total Income",
+            f"₹{total_income:,.2f}"
+        )
+
+        col3.metric(
+            "💸 Total Expenses",
+            f"₹{total_expenses:,.2f}"
+        )
+
+        col4.metric(
+            "💰 Total Balance",
+            f"₹{total_balance:,.2f}"
+        )
+
+        st.divider()
+
+        # REGISTERED USERS
+
+        st.header(
+            "👥 Registered Users"
+        )
+
+        if users_df.empty:
+
+            st.info(
+                "No registered users found."
+            )
+
+        else:
+
+            st.dataframe(
+                users_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+
+        # ALL TRANSACTIONS
+
+        st.header(
+            "📋 All User Transactions"
+        )
+
+        if all_transactions_df.empty:
+
+            st.info(
+                "No transactions found."
+            )
+
+        else:
+
+            admin_df = all_transactions_df.copy()
+
+            if "user_name" in admin_df.columns:
+
+                user_options = [
+                    "All Users"
+                ] + sorted(
+                    admin_df["user_name"]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+
+                selected_user = st.selectbox(
+                    "👤 Filter by User",
+                    user_options
+                )
+
+                if selected_user != "All Users":
+
+                    admin_df = admin_df[
+                        admin_df["user_name"]
+                        == selected_user
+                    ]
+
+            if "date" in admin_df.columns:
+
+                admin_df["date"] = pd.to_datetime(
+                    admin_df["date"],
+                    errors="coerce"
+                )
+
+                valid_dates = admin_df[
+                    admin_df["date"].notna()
+                ]["date"]
+
+                if not valid_dates.empty:
+
+                    min_date = (
+                        valid_dates.min().date()
+                    )
+
+                    max_date = (
+                        valid_dates.max().date()
+                    )
+
+                    date_range = st.date_input(
+                        "📅 Filter by Date",
+                        value=(
+                            min_date,
+                            max_date
+                        ),
+                        min_value=min_date,
+                        max_value=max_date
+                    )
+
+                    if len(date_range) == 2:
+
+                        start_date = pd.Timestamp(
+                            date_range[0]
+                        )
+
+                        end_date = (
+                            pd.Timestamp(
+                                date_range[1]
+                            )
+                            + pd.Timedelta(days=1)
+                        )
+
+                        admin_df = admin_df[
+                            (
+                                admin_df["date"]
+                                >= start_date
+                            )
+                            &
+                            (
+                                admin_df["date"]
+                                < end_date
+                            )
+                        ]
+
+            st.dataframe(
+                admin_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.download_button(
+                label="📥 Download All Transaction Data",
+                data=admin_df.to_csv(
+                    index=False
+                ),
+                file_name=(
+                    "smartspend_admin_transactions.csv"
+                ),
+                mime="text/csv"
+            )
+
+        st.divider()
+
+        # USER-WISE EXPENSES
+
+        if not all_transactions_df.empty:
+
+            st.header(
+                "📊 User-wise Expenses"
+            )
+
+            if "user_name" in all_transactions_df.columns:
+
+                expense_admin_df = (
+                    all_transactions_df[
+                        all_transactions_df[
+                            "transaction_type"
+                        ] == "Expense"
+                    ]
+                )
+
+                if not expense_admin_df.empty:
+
+                    user_expenses = (
+                        expense_admin_df
+                        .groupby("user_name")[
+                            "amount"
+                        ]
+                        .sum()
+                        .reset_index()
+                        .sort_values(
+                            "amount",
+                            ascending=False
+                        )
+                    )
+
+                    fig_admin = px.bar(
+                        user_expenses,
+                        x="user_name",
+                        y="amount",
+                        title="💸 Total Expenses by User"
+                    )
+
+                    st.plotly_chart(
+                        fig_admin,
+                        use_container_width=True
+                    )
+
+        # CATEGORY ANALYSIS
+
+        if not all_transactions_df.empty:
+
+            expense_admin_df = (
+                all_transactions_df[
+                    all_transactions_df[
+                        "transaction_type"
+                    ] == "Expense"
+                ]
+            )
+
+            if not expense_admin_df.empty:
+
+                st.header(
+                    "📊 Overall Spending by Category"
+                )
+
+                category_admin = (
+                    expense_admin_df
+                    .groupby("category")[
+                        "amount"
+                    ]
+                    .sum()
+                    .reset_index()
+                    .sort_values(
+                        "amount",
+                        ascending=False
+                    )
+                )
+
+                fig_category = px.pie(
+                    category_admin,
+                    names="category",
+                    values="amount",
+                    title="💸 Overall Spending by Category"
+                )
+
+                st.plotly_chart(
+                    fig_category,
+                    use_container_width=True
+                )
+
+
+    # USER CSV DOWNLOAD
 
     if not df.empty:
+
+        st.sidebar.divider()
 
         st.sidebar.download_button(
             label="📥 Download My Transactions",
             data=df.to_csv(
                 index=False
             ),
-            file_name=(
-                "smartspend_transactions.csv"
-            ),
+            file_name="smartspend_transactions.csv",
             mime="text/csv"
         )
