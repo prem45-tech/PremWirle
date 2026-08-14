@@ -1,40 +1,42 @@
 import sqlite3
 import pandas as pd
-from pathlib import Path
 import hashlib
+from pathlib import Path
 
 
 DB_PATH = "data/finance.db"
 
-
-
-# DATABASE CONNECTION
 
 def get_connection():
     Path("data").mkdir(exist_ok=True)
     return sqlite3.connect(DB_PATH)
 
 
-
-# CREATE DATABASE
+def hash_password(password):
+    return hashlib.sha256(
+        password.encode()
+    ).hexdigest()
 
 
 def create_database():
 
     conn = get_connection()
 
+    cursor = conn.cursor()
+
     # Users table
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0
         )
     """)
 
     # Transactions table
-    conn.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -47,82 +49,130 @@ def create_database():
         )
     """)
 
+    # Check users columns
+    cursor.execute(
+        "PRAGMA table_info(users)"
+    )
+
+    user_columns = [
+        row[1]
+        for row in cursor.fetchall()
+    ]
+
+    if "is_admin" not in user_columns:
+
+        cursor.execute("""
+            ALTER TABLE users
+            ADD COLUMN is_admin INTEGER DEFAULT 0
+        """)
+
+    # Check transactions columns
+    cursor.execute(
+        "PRAGMA table_info(transactions)"
+    )
+
+    transaction_columns = [
+        row[1]
+        for row in cursor.fetchall()
+    ]
+
+    if "user_id" not in transaction_columns:
+
+        cursor.execute("""
+            ALTER TABLE transactions
+            ADD COLUMN user_id INTEGER
+        """)
+
+    # Create default admin
+    admin_email = "premwirle@gmail.com"
+    admin_password = "admin123"
+
+    cursor.execute(
+        "SELECT id FROM users WHERE email = ?",
+        (admin_email,)
+    )
+
+    admin_exists = cursor.fetchone()
+
+    if not admin_exists:
+
+        cursor.execute("""
+            INSERT INTO users
+            (name, email, password, is_admin)
+            VALUES (?, ?, ?, ?)
+        """, (
+            "Administrator",
+            admin_email,
+            hash_password(admin_password),
+            1
+        ))
+
     conn.commit()
     conn.close()
 
 
-
-# PASSWORD HASHING
-
-
-def hash_password(password):
-
-    return hashlib.sha256(
-        password.encode()
-    ).hexdigest()
-
-
-
-# REGISTER USER
-
-
-def register_user(name, email, password):
+def register_user(
+    name,
+    email,
+    password
+):
 
     conn = get_connection()
-
-    hashed_password = hash_password(password)
 
     try:
 
         conn.execute("""
             INSERT INTO users
-            (name, email, password)
-            VALUES (?, ?, ?)
+            (name, email, password, is_admin)
+            VALUES (?, ?, ?, ?)
         """, (
             name,
             email,
-            hashed_password
+            hash_password(password),
+            0
         ))
 
         conn.commit()
-        conn.close()
 
         return True
 
     except sqlite3.IntegrityError:
 
-        conn.close()
-
         return False
 
+    finally:
+
+        conn.close()
 
 
-# LOGIN USER
-
-
-def login_user(email, password):
+def login_user(
+    email,
+    password
+):
 
     conn = get_connection()
 
-    hashed_password = hash_password(password)
+    cursor = conn.cursor()
 
-    user = conn.execute("""
-        SELECT id, name, email
+    cursor.execute("""
+        SELECT
+            id,
+            name,
+            email,
+            is_admin
         FROM users
         WHERE email = ?
         AND password = ?
     """, (
         email,
-        hashed_password
-    )).fetchone()
+        hash_password(password)
+    ))
+
+    user = cursor.fetchone()
 
     conn.close()
 
     return user
-
-
-
-# ADD TRANSACTION
 
 
 def add_transaction(
@@ -160,10 +210,6 @@ def add_transaction(
     conn.close()
 
 
-
-# GET USER TRANSACTIONS
-
-
 def get_transactions(user_id):
 
     conn = get_connection()
@@ -186,11 +232,10 @@ def get_transactions(user_id):
     return df
 
 
-
-# DELETE TRANSACTION
-
-
-def delete_transaction(transaction_id, user_id):
+def delete_transaction(
+    transaction_id,
+    user_id
+):
 
     conn = get_connection()
 
@@ -205,3 +250,57 @@ def delete_transaction(transaction_id, user_id):
 
     conn.commit()
     conn.close()
+
+
+def get_all_users():
+
+    conn = get_connection()
+
+    df = pd.read_sql_query("""
+        SELECT
+            id,
+            name,
+            email,
+            is_admin
+        FROM users
+        ORDER BY id
+    """, conn)
+
+    conn.close()
+
+    # Make admin status easier to understand
+    df["is_admin"] = df["is_admin"].map({
+        1: "Yes",
+        0: "No"
+    })
+
+    return df
+
+
+def get_all_transactions():
+
+    conn = get_connection()
+
+    df = pd.read_sql_query("""
+        SELECT
+            transactions.id,
+            transactions.user_id,
+            users.name AS user_name,
+            users.email AS user_email,
+            transactions.transaction_type,
+            transactions.amount,
+            transactions.category,
+            transactions.date,
+            transactions.description
+
+        FROM transactions
+
+        INNER JOIN users
+        ON transactions.user_id = users.id
+
+        ORDER BY transactions.date DESC
+    """, conn)
+
+    conn.close()
+
+    return df
